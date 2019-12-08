@@ -9,14 +9,11 @@ import ezdxf
 import pprint
 import inspect
 import math
+from interval_tree import IntervalTree
+from basic_geometry import *
 
-def clamp_angle(angle):
-    """Constrain angle to the range [0, infinity)"""
-    # https://stackoverflow.com/questions/2320986/easy-way-to-keeping-angles-between-179-and-180-degrees
-    angle = angle%(2*math.pi) # reduce angle.
-    #angle = (angle + math.pi*2)%(math.pi * 2) # make angle positive
-    return angle
 
+# TODO: should contour subclass SubContour?
 class Contour(object):
     """A contour class for closed contours"""
 
@@ -155,8 +152,8 @@ class SubContour(Contour):
         # TODO: this assumes we open the angle counterclockwise.
         if entity.dxftype() == "LINE":
             if self.end_x < self.x_min:
-                self.x_min = self.endx_x
-            if self.endx_x > self.x_max:
+                self.x_min = self.end_x
+            if self.end_x > self.x_max:
                 self.x_max = self.end_x
             if self.end_y < self.y_min:
                 self.y_min = self.end_y
@@ -191,6 +188,29 @@ class SubContour(Contour):
     def is_closed(self):
         return abs(self.start_x - self.end_x) < self.__class__.EPS and \
             abs(self.start_y - self.end_y) < self.__class__.EPS
+
+    def count_ray_intersections(self, ray_origin, ray_direction):
+        """Count up the number of intersections with the ray."""
+        if not self.is_closed():
+            return 0
+
+        intersection_count = 0
+        for segment in segments:
+            if segment.dxftype() == "LINE":
+                intersection_count += \
+                    intersect_segment_with_ray(segment.dxf.start,
+                                               segment.dxf.end,
+                                               ray_origin, ray_direction)
+            elif segment.dxftype() == "ARC":
+                intersection_count += \
+                    intersect_arc_with_ray(segment.dxf.center,
+                                           segment.dxf.radius,
+                                           segment.dxf.start_angle*180.0/math.pi,
+                                           segment.dxf.end_angle*180.0/math.pi,
+                                           segment.dxf.end,
+                                           ray_origin, ray_direction)
+                return 0
+        return intersection_count
 
 class Part(object):
     """A shape class."""
@@ -306,25 +326,45 @@ def create_parts_from_contours(contours):
     # TODO: handle pre-closed contours. (Circles, ellipses, etc.)
     parts = []
     height_interval_to_contour = {}
+    contour_tree = IntervalTree()
+    heights = set()
 
     # Find min/max heights of all contours. Create list (flattened dict) of height pts.
     # Also create interval tree.
+    # Compute height and hash it.
+    layout_y_min = math.inf
+    layout_y_max = -math.inf
     for contour in contours:
-        # Compute height and hash it.
         height_interval_to_contour[(contour.y_min, contour.y_max)] = contour
+        if contour.y_min < layout_y_min:
+            layout_y_min = contour.y_min
+        if contour.y_max > layout_y_max:
+            layout_y_max = contour.y_max
+        height.add((contour.y_max - contour.y_min)/2 + contour.y_min)
+    interval_tree.create(layout_y_min, layout_y_max, height_interval_to_contour)
 
     # Construct all polygon in-out relationships.
-    for z_height in z_heights:
+    # This is O(N^2)/2, but perhaps we can do better?
+    for height in heights:
         contour_subset = None # FIXME.
         for a_index, contour_a in enumerate(contour_subset):
-            for b_index, contour_b in enumerate(contour_subset[a_index+1:])
+            for b_index, contour_b in enumerate(contour_subset[a_index+1:]):
+                point_a = (contour_a.start_x, contour_a.start_y)
+                point_b = (contour_b.start_x, contour_b.start_y)
                 # Check if a is in b. If so, insert pair relationship into tree. bail
+                if point_in_polygon(point_a, contour_b):
+                    # Do a tree insertion here!
+                    pass
                 # Check if b is in a. If so, insert pair relationship into tree.
-                pass
+                elif point_in_polygon(point_b, contour_a):
+                    # Do a tree insertion here!
+                    pass
         pass
 
     # Create the parts.
     # handle case with multiple polygons at the same level.
+
+    # Serialize tree.
 
     return parts
 
