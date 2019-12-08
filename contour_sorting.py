@@ -10,6 +10,13 @@ import pprint
 import inspect
 import math
 
+def clamp_angle(angle):
+    """Constrain angle to the range [0, infinity)"""
+    # https://stackoverflow.com/questions/2320986/easy-way-to-keeping-angles-between-179-and-180-degrees
+    angle = angle%(2*math.pi) # reduce angle.
+    #angle = (angle + math.pi*2)%(math.pi * 2) # make angle positive
+    return angle
+
 class Contour(object):
     """A contour class for closed contours"""
 
@@ -28,8 +35,10 @@ class SubContour(Contour):
 
     def __init__(self):
         super().__init__()
-        self.y_min = None
-        self.y_max = None
+        self.y_min = math.inf
+        self.y_max = -math.inf
+        self.x_min = math.inf
+        self.x_max = -math.inf
 
     def merge_back(self, other_sub_contour, reverse_order=False):
         if not reverse_order:
@@ -100,12 +109,84 @@ class SubContour(Contour):
         return abs(self.end_x - x) < self.__class__.EPS and abs(self.end_y - y) < self.__class__.EPS
 
     def push_front(self, entity):
+        """Push a new line or arc to the front of the subcontour. Update extreme bounding box points"""
         self.segments.insert(0, entity)
-        # Check the y values to see if we need to update them.
+        # Check the x,y min/max values to see if we need to update them.
+        # TODO: this assumes we open the angle counterclockwise.
+        if entity.dxftype() == "LINE":
+            if self.start_x < self.x_min:
+                self.x_min = self.start_x
+            if self.start_x > self.x_max:
+                self.x_max = self.start_x
+            if self.start_y < self.y_min:
+                self.y_min = self.start_y
+            if self.start_y > self.y_max:
+                self.y_max = self.start_y
+        elif entity.dxftype() == "ARC":
+            start_angle = clamp_angle(entity.dxf.start_angle*math.pi/180.0)
+            end_angle = clamp_angle(entity.dxf.end_angle*math.pi/180.0)
+
+            # Start by taking the extremes of the angle endpoints at the relevant end of the contour.
+            y_max = self.start_y
+            y_min = self.start_y
+            x_max = self.start_x
+            x_min = self.start_x
+
+            for candidate_angle in [90, 270]:
+                y_val = self.segments[0].dxf.radius * math.sin(candidate_angle*math.pi/180.0) + self.segments[0].dxf.center[1]
+                if start_angle < candidate_angle < end_angle:
+                    y_max = max([y_max, y_val])
+                    y_min = min([y_min, y_val])
+            self.y_max = max([y_max, self.y_max])
+            self.y_min = min([y_min, self.y_min])
+
+            for candidate_angle in [0, 180]:
+                x_val = self.segments[0].dxf.radius * math.cos(candidate_angle*math.pi/180.0) + self.segments[0].dxf.center[0]
+                if start_angle < candidate_angle < end_angle:
+                    x_max = max([x_max, x_val])
+                    x_min = min([x_min, x_val])
+            self.x_max = max([x_max, self.x_max])
+            self.x_min = min([x_min, self.x_min])
 
     def push_back(self, entity):
+        """Push a new line or arc to the back of the subcontour. Update extreme bounding box points"""
         self.segments.insert(len(self.segments), entity)
         # Check the y values to see if we need to update them.
+        # TODO: this assumes we open the angle counterclockwise.
+        if entity.dxftype() == "LINE":
+            if self.end_x < self.x_min:
+                self.x_min = self.endx_x
+            if self.endx_x > self.x_max:
+                self.x_max = self.end_x
+            if self.end_y < self.y_min:
+                self.y_min = self.end_y
+            if self.end_y > self.y_max:
+                self.y_max = self.end_y
+        elif entity.dxftype() == "ARC":
+            start_angle = clamp_angle(entity.dxf.start_angle*math.pi/180.0)
+            end_angle = clamp_angle(entity.dxf.end_angle*math.pi/180.0)
+
+            # Start by taking the extremes of the angle endpoints at the relevant end of the contour.
+            y_max = self.end_y
+            y_min = self.end_y
+            x_max = self.end_x
+            x_min = self.end_x
+
+            for candidate_angle in [90, 270]:
+                y_val = self.segments[0].dxf.radius * math.sin(candidate_angle*math.pi/180.0) + self.segments[0].dxf.center[1]
+                if start_angle < candidate_angle < end_angle:
+                    y_max = max([y_max, y_val])
+                    y_min = min([y_min, y_val])
+            self.y_max = max([y_max, self.y_max])
+            self.y_min = min([y_min, self.y_min])
+
+            for candidate_angle in [0, 180]:
+                x_val = self.segments[0].dxf.radius * math.cos(candidate_angle*math.pi/180.0) + self.segments[0].dxf.center[0]
+                if start_angle < candidate_angle < end_angle:
+                    x_max = max([x_max, x_val])
+                    x_min = min([x_min, x_val])
+            self.x_max = max([x_max, self.x_max])
+            self.x_min = min([x_min, self.x_min])
 
     def is_closed(self):
         return abs(self.start_x - self.end_x) < self.__class__.EPS and \
@@ -224,17 +305,13 @@ def create_parts_from_contours(contours):
     """Sort contours into parts."""
     # TODO: handle pre-closed contours. (Circles, ellipses, etc.)
     parts = []
-    z_intervals = {}
+    height_interval_to_contour = {}
 
     # Find min/max heights of all contours. Create list (flattened dict) of height pts.
     # Also create interval tree.
     for contour in contours:
         # Compute height and hash it.
-        z_min = 0;
-        z_max = 0;
-        z_heights[()] = contour
-        # Insert into tree...?
-        pass
+        height_interval_to_contour[(contour.y_min, contour.y_max)] = contour
 
     # Construct all polygon in-out relationships.
     for z_height in z_heights:
