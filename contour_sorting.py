@@ -4,13 +4,13 @@
 # Assume no self-intersecting contours.
 # TODO: handle parts-in-parts case.
 # TODO: handle overlapping polygon case.
+# TODO: handle edge cases of ray-casting intersection.
 
 import ezdxf
-import pprint
-import inspect
 import math
 from interval_tree import IntervalTree
 from basic_geometry import *
+from anytree import Node, RenderTree
 
 
 # TODO: should contour subclass SubContour?
@@ -19,6 +19,10 @@ class Contour(object):
 
     def __init__(self):
         self.segments = [] # references to arc, lines, etc.
+
+    def name(self):
+        """ Because contours do not share lines, we can give them unique names from a segment name."""
+        return f"Contour_with_{str(self.segments[0])}"
 
     def __getitem__(self, index):
         return self.segments.__getitem__(index)
@@ -43,7 +47,6 @@ class SubContour(Contour):
                 self.push_back(entity)
         else:
             for entity in reversed(other_sub_contour):
-                print("pushing to the back.")
                 flip_entity(entity)
                 self.push_back(entity)
 
@@ -130,7 +133,7 @@ class SubContour(Contour):
             x_min = self.start_x
 
             for candidate_angle in [90, 270]:
-                y_val = self.segments[0].dxf.radius * math.sin(candidate_angle*math.pi/180.0) + self.segments[0].dxf.center[1]
+                y_val = entity.dxf.radius * math.sin(candidate_angle*math.pi/180.0) + entity.dxf.center[1]
                 if start_angle < candidate_angle < end_angle:
                     y_max = max([y_max, y_val])
                     y_min = min([y_min, y_val])
@@ -138,7 +141,7 @@ class SubContour(Contour):
             self.y_min = min([y_min, self.y_min])
 
             for candidate_angle in [0, 180]:
-                x_val = self.segments[0].dxf.radius * math.cos(candidate_angle*math.pi/180.0) + self.segments[0].dxf.center[0]
+                x_val = entity.dxf.radius * math.cos(candidate_angle*math.pi/180.0) + entity.dxf.center[0]
                 if start_angle < candidate_angle < end_angle:
                     x_max = max([x_max, x_val])
                     x_min = min([x_min, x_val])
@@ -170,7 +173,7 @@ class SubContour(Contour):
             x_min = self.end_x
 
             for candidate_angle in [90, 270]:
-                y_val = self.segments[0].dxf.radius * math.sin(candidate_angle*math.pi/180.0) + self.segments[0].dxf.center[1]
+                y_val = entity.dxf.radius * math.sin(candidate_angle*math.pi/180.0) + entity.dxf.center[1]
                 if start_angle < candidate_angle < end_angle:
                     y_max = max([y_max, y_val])
                     y_min = min([y_min, y_val])
@@ -178,7 +181,7 @@ class SubContour(Contour):
             self.y_min = min([y_min, self.y_min])
 
             for candidate_angle in [0, 180]:
-                x_val = self.segments[0].dxf.radius * math.cos(candidate_angle*math.pi/180.0) + self.segments[0].dxf.center[0]
+                x_val = entity.dxf.radius * math.cos(candidate_angle*math.pi/180.0) + entity.dxf.center[0]
                 if start_angle < candidate_angle < end_angle:
                     x_max = max([x_max, x_val])
                     x_min = min([x_min, x_val])
@@ -325,40 +328,57 @@ def create_parts_from_contours(contours):
     """Sort contours into parts."""
     # TODO: handle pre-closed contours. (Circles, ellipses, etc.)
     parts = []
-    height_interval_to_contour = {}
+    height_interval_to_contours = {} # items are contour lists, since multiple contours can have the same height interval.
     contour_tree = IntervalTree()
     heights = set()
+    nested_contour_tree_items = {} # dict of contour nodes
 
     # Find min/max heights of all contours. Create list (flattened dict) of height pts.
-    # Also create interval tree.
-    # Compute height and hash it.
     layout_y_min = math.inf
     layout_y_max = -math.inf
     for contour in contours:
-        height_interval_to_contour[(contour.y_min, contour.y_max)] = contour
+        if height_interval_to_contours[(contour.y_min, contour.y_max)]:
+            height_interval_to_contours[(contour.y_min, contour.y_max)].append(contour)
+        else:
+            height_interval_to_contours[(contour.y_min, contour.y_max)] = [contour]
         if contour.y_min < layout_y_min:
             layout_y_min = contour.y_min
         if contour.y_max > layout_y_max:
             layout_y_max = contour.y_max
-        height.add((contour.y_max - contour.y_min)/2 + contour.y_min)
-    interval_tree.create(layout_y_min, layout_y_max, height_interval_to_contour)
+        # Add the contour's midpoint height interval.
+        heights.add((contour.y_max - contour.y_min)/2 + contour.y_min)
+
+    # Create interval tree.
+    contour_tree.build(layout_y_min, layout_y_max, height_interval_to_contours)
 
     # Construct all polygon in-out relationships.
-    # This is O(N^2)/2, but perhaps we can do better?
     for height in heights:
-        contour_subset = None # FIXME.
+        # Extract all the contours that exist at this height.
+        contour_subset_lists = contour_tree.query(height)
+        contour_subset_lists = [item[1] for item in contour_subset_lists] # remove the keys.
+        contour_subset_lists = [item for sublist in l for item in sublist] # flatten remaining lists.
+
+        # Build the tree.
         for a_index, contour_a in enumerate(contour_subset):
             for b_index, contour_b in enumerate(contour_subset[a_index+1:]):
                 point_a = (contour_a.start_x, contour_a.start_y)
                 point_b = (contour_b.start_x, contour_b.start_y)
-                # Check if a is in b. If so, insert pair relationship into tree. bail
+                # Check if a is in b. If so, insert pair relationship into tree.
                 if point_in_polygon(point_a, contour_b):
-                    # Do a tree insertion here!
-                    pass
+                    # Assign parenthood of contour_a to contour_b. Add back to the dict
+                    contour_b_node = nested_contour_tree_items.get(contour_b.name(), Node(contour_b.name()))
+                    contour_a_node = nested_contour_tree_items.get(contour_a.name(), Node(contour_a.name(), parent=contour_b_node))
+                    nested_contour_tree_items[contour_a.name()] = contour_a_node
+                    nested_contour_tree_items[contour_b.name()] = contour_b_node
                 # Check if b is in a. If so, insert pair relationship into tree.
                 elif point_in_polygon(point_b, contour_a):
-                    # Do a tree insertion here!
-                    pass
+                    # Assign parenthood of contour_b to contour_a. Add back to the dict
+                    contour_a_node = nested_contour_tree_items.get(contour_a.name(), Node(contour_a.name()))
+                    contour_b_node = nested_contour_tree_items.get(contour_b.name(), Node(contour_b.name(), parent=contour_a_node))
+                    nested_contour_tree_items[contour_a.name()] = contour_a_node
+                    nested_contour_tree_items[contour_b.name()] = contour_b_node
+
+        # Find the root(s) and print out the tree from there.
         pass
 
     # Create the parts.
@@ -379,7 +399,6 @@ def main():
     for e in msp:
         if e.dxftype() == 'LINE':
             lines.append(((e.dxf.start[0], e.dxf.start[1]), (e.dxf.end[0], e.dxf.end[1])))
-            #print_entity(e)
 
     # Open a document.
     doc = ezdxf.readfile("30mm_square_with_holes_and_fillets.DXF")
@@ -387,7 +406,7 @@ def main():
 
     contours = create_contours(msp)
     parts = create_parts_from_contours(contours)
-    parts = sort_parts(parts) # Sort to minimize travel moves.
+    #parts = sort_parts(parts) # Sort to minimize travel moves.
     # Recreate the DXF, and we're done!
 
     ## Create a new document.
