@@ -337,7 +337,7 @@ def create_parts_from_contours(contours):
     layout_y_min = math.inf
     layout_y_max = -math.inf
     for contour in contours:
-        if height_interval_to_contours[(contour.y_min, contour.y_max)]:
+        if (contour.y_min, contour.y_max) in height_interval_to_contours:
             height_interval_to_contours[(contour.y_min, contour.y_max)].append(contour)
         else:
             height_interval_to_contours[(contour.y_min, contour.y_max)] = [contour]
@@ -356,29 +356,32 @@ def create_parts_from_contours(contours):
         # Extract all the contours that exist at this height.
         contour_subset_lists = contour_tree.query(height)
         contour_subset_lists = [item[1] for item in contour_subset_lists] # remove the keys.
-        contour_subset_lists = [item for sublist in l for item in sublist] # flatten remaining lists.
+        contour_subset_lists = [item for sublist in contour_subset_lists for item in sublist] # flatten remaining lists.
+
+        # TODO: special case a single contour.
 
         # Build the tree.
-        for a_index, contour_a in enumerate(contour_subset):
-            for b_index, contour_b in enumerate(contour_subset[a_index+1:]):
+        for a_index, contour_a in enumerate(contour_subset_lists):
+            contour_a_node = nested_contour_tree_items.get(contour_a.name(), Node(contour_a.name()))
+            nested_contour_tree_items[contour_a.name()] = contour_a_node
+            for b_index, contour_b in enumerate(contour_subset_lists[a_index+1:]):
                 point_a = (contour_a.start_x, contour_a.start_y)
                 point_b = (contour_b.start_x, contour_b.start_y)
                 # Check if a is in b. If so, insert pair relationship into tree.
                 if point_in_polygon(point_a, contour_b):
                     # Assign parenthood of contour_a to contour_b. Add back to the dict
                     contour_b_node = nested_contour_tree_items.get(contour_b.name(), Node(contour_b.name()))
-                    contour_a_node = nested_contour_tree_items.get(contour_a.name(), Node(contour_a.name(), parent=contour_b_node))
-                    nested_contour_tree_items[contour_a.name()] = contour_a_node
+                    contour_a_node.parent = contour_a_node
                     nested_contour_tree_items[contour_b.name()] = contour_b_node
                 # Check if b is in a. If so, insert pair relationship into tree.
                 elif point_in_polygon(point_b, contour_a):
                     # Assign parenthood of contour_b to contour_a. Add back to the dict
-                    contour_a_node = nested_contour_tree_items.get(contour_a.name(), Node(contour_a.name()))
-                    contour_b_node = nested_contour_tree_items.get(contour_b.name(), Node(contour_b.name(), parent=contour_a_node))
-                    nested_contour_tree_items[contour_a.name()] = contour_a_node
+                    contour_b_node = nested_contour_tree_items.get(contour_b.name(), Node(contour_b.name()))
+                    contour_b_node.parent = contour_a_node
                     nested_contour_tree_items[contour_b.name()] = contour_b_node
 
         # Find the root(s) and print out the tree from there.
+        print(f"Nested Contour Tree has {len(nested_contour_tree_items)} items.")
         pass
 
     # Create the parts.
