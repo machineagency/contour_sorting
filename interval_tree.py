@@ -15,20 +15,24 @@ class IntervalTree(object):
 
 
     def build(self, lower_bound, upper_bound, intervals):
+        #import pprint
+        #print("intervals from the start.")
+        #pprint.pprint(intervals)
         self.midpoint = (upper_bound - lower_bound)/2.0 + lower_bound
+        #print(f"midpoint: {self.midpoint}")
         remaining_intervals = {}
         intervals_to_remove = []
         for interval, item in intervals.items():
-            if interval[0] < self.midpoint < interval[1]:
+            if interval[0] <= self.midpoint <= interval[1]:
                 self.left_sorted_contents.append((interval, item))
                 self.right_sorted_contents.append((interval, item))
                 # Since we can't modify dict size while iterating, mark this item to be removed.
                 intervals_to_remove.append(interval)
             else:
-                remaining_intervals[interval] = item # Prune the tree.
+                remaining_intervals[interval] = item
 
-        self.left_sorted_contents.sort(key=lambda interval_pair: interval_pair[0])
-        self.right_sorted_contents.sort(key=lambda interval_pair: interval_pair[1], reverse=True)
+        self.left_sorted_contents.sort(key=lambda interval_pair: interval_pair[0][0])
+        self.right_sorted_contents.sort(key=lambda interval_pair: interval_pair[0][1], reverse=True)
 
         # Create new dicts based on remaining tree items.
         lower_intervals = {}
@@ -43,6 +47,8 @@ class IntervalTree(object):
 
         for interval in intervals_to_remove:
             del intervals[interval]
+        #print("intervals after intersecting.")
+        #pprint.pprint(intervals)
         if len(intervals):
             raise RuntimeError("This shouldn't happen.")
 
