@@ -1,0 +1,6 @@
+anytree==2.7.3
+certifi==2019.9.11
+ezdxf==0.10.2
+numpy==1.17.4
+pyparsing==2.4.5
+six==1.13.0

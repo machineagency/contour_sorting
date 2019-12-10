@@ -21,9 +21,9 @@ def point_in_contour(pt, contour):
         # Skip angles where the denominator blows up.
         if math.sin(theta) == 0 or math.cos(theta) == 0:
             continue
-        print(f"theta: {theta * 180.0/math.pi}")
-        print(f"Ray circle center: {ray_circle_center}")
-        print(f"Ray circle radius: {ray_circle_radius}")
+        #print(f"theta: {theta * 180.0/math.pi}")
+        #print(f"Ray circle center: {ray_circle_center}")
+        #print(f"Ray circle radius: {ray_circle_radius}")
         tangent_line_pt = [ray_circle_radius*math.cos(theta) + ray_circle_center[0],
                            ray_circle_radius*math.sin(theta) + ray_circle_center[1]]
         # Compute ray origin point on the tangent line using line-line intersection
@@ -45,11 +45,11 @@ def point_in_contour(pt, contour):
                 # TODO: put a try/except here to catch edge cases and change angle.
                 try:
                     ray_dir = (pt[0] - ray_origin_pt[0], pt[1] - ray_origin_pt[1])
-                    print("INTERSECTION TEST:")
-                    print(f"    seg start: {entity.dxf.start[0]},{entity.dxf.start[1]}")
-                    print(f"    seg end:   {entity.dxf.end[0]},{entity.dxf.end[1]}")
-                    print(f"    ray start: {ray_origin_pt}")
-                    print(f"    ray dir:   {ray_dir}")
+                    #print("INTERSECTION TEST:")
+                    #print(f"    seg start: {entity.dxf.start[0]},{entity.dxf.start[1]}")
+                    #print(f"    seg end:   {entity.dxf.end[0]},{entity.dxf.end[1]}")
+                    #print(f"    ray start: {ray_origin_pt}")
+                    #print(f"    ray dir:   {ray_dir}")
                     if intersect_segment_with_ray((entity.dxf.start[0], entity.dxf.start[1]),
                                                   (entity.dxf.end[0], entity.dxf.end[1]),
                                                   ray_origin_pt,
