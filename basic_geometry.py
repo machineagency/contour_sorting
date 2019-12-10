@@ -10,33 +10,12 @@ class IntersectError(BaseException):
 
 
 def point_in_contour(pt, contour):
-    # Ray cast from a circular perimeter around the contour's bounding box
-    ray_circle_center = [(contour.x_max - contour.x_min)/2.0 + contour.x_min,
-                         (contour.y_max - contour.y_min)/2.0 + contour.y_min]
-    # This is an oversized circle.
-    ray_circle_radius = max([contour.x_max - contour.x_min, contour.y_max - contour.y_min])
 
     while True:
         theta = random.random()*2*math.pi # random angle in range [0, 2pi)
-        # Skip angles where the denominator blows up.
-        if math.sin(theta) == 0 or math.cos(theta) == 0:
-            continue
-        #print(f"theta: {theta * 180.0/math.pi}")
-        #print(f"Ray circle center: {ray_circle_center}")
-        #print(f"Ray circle radius: {ray_circle_radius}")
-        tangent_line_pt = [ray_circle_radius*math.cos(theta) + ray_circle_center[0],
-                           ray_circle_radius*math.sin(theta) + ray_circle_center[1]]
-        # Compute ray origin point on the tangent line using line-line intersection
-        # y = ax + c, the ray line equation
-        a = math.sin(theta)/math.cos(theta)
-        c = a*(0 - pt[0]) + pt[1]
-        # y = bx + d, the tangent line that intersects the ray starting point.
-        b = -math.cos(theta)/math.sin(theta)
-        d = b*(0 - tangent_line_pt[0]) + tangent_line_pt[1]
-        ray_origin_pt = ((d-c)/(a-b), (a*d - b*c)/(a-b))
-        #print(f"Ray origin point: {ray_origin_pt}")
-
-        # Ray cast from the tangent line formed at the circle's perimeter at the angle theta.
+        ray_dir = (math.cos(theta), math.sin(theta))
+        print(f"theta: {theta * 180.0/math.pi}")
+        # Ray cast from the point in question
         # Ray should start from here and intersect the point in question.
         intersection_count = 0
         intersect_error = False
@@ -44,15 +23,15 @@ def point_in_contour(pt, contour):
             if entity.dxftype() == "LINE":
                 # TODO: put a try/except here to catch edge cases and change angle.
                 try:
-                    ray_dir = (pt[0] - ray_origin_pt[0], pt[1] - ray_origin_pt[1])
-                    #print("INTERSECTION TEST:")
-                    #print(f"    seg start: {entity.dxf.start[0]},{entity.dxf.start[1]}")
-                    #print(f"    seg end:   {entity.dxf.end[0]},{entity.dxf.end[1]}")
-                    #print(f"    ray start: {ray_origin_pt}")
-                    #print(f"    ray dir:   {ray_dir}")
+                    print("INTERSECTION TEST:")
+                    print(f"    seg start: {entity.dxf.start[0]},{entity.dxf.start[1]}")
+                    print(f"    seg end:   {entity.dxf.end[0]},{entity.dxf.end[1]}")
+                    print(f"    ray start: {pt}")
+                    print(f"    ray dir:   {ray_dir}")
+                    print(f"    ray angle:   {math.atan2(math.sin(theta), math.cos(theta))*180.0/math.pi}")
                     if intersect_segment_with_ray((entity.dxf.start[0], entity.dxf.start[1]),
                                                   (entity.dxf.end[0], entity.dxf.end[1]),
-                                                  ray_origin_pt,
+                                                  pt,
                                                   ray_dir):
                         intersection_count += 1
                 except IntersectError:
@@ -66,7 +45,8 @@ def point_in_contour(pt, contour):
         if intersect_error:
             continue
         print(f"Total intersections: {intersection_count}")
-        if intersection_count > 0 and intersection_count%2 == 0:
+        print()
+        if intersection_count > 0 and intersection_count%2 == 1:
             return True
         return False
 
@@ -96,7 +76,7 @@ def intersect_segment_with_ray(start_pt, end_pt, ray_origin_pt, ray_direction_ve
         # Return false in this case of collinear lines.
         # In the context of a contour, another segment sharing the point will
         # register as a intersection.
-        #print("lines are collinear.")
+        print("lines are collinear.")
         return False
 
     # Check if two lines are parallel but not collinear.
@@ -104,22 +84,25 @@ def intersect_segment_with_ray(start_pt, end_pt, ray_origin_pt, ray_direction_ve
     angle1 = (math.atan2(r[1], r[0]) + 2*math.pi) % (2*math.pi) # make angle positive
     angle2 = (math.atan2(s[1], s[0]) + 2*math.pi) % (2*math.pi) # make angle positive
     if abs(angle1 - angle2) < 1e-6:
-        #print("lines are parallel but not collinear")
+        print("lines are parallel but not collinear")
         return False
 
     # General Case:
     t1 = np.cross((q - p), r) / np.cross(r, s) # segment equation paramter
     t2 = np.cross((q - p), s)/np.cross(r, s) # ray equation parameter
-    #print(f"T1: {t1} | T2: {t2}")
-    #print(f"intersection at {q + t1*s}")
+    print(f"T1: {t1} | T2: {t2}")
+    print(f"supposed intersection at {q + t1*s}")
 
     # Check constraints:
     if 0.0 <= t1 <= 1.0 and t2 >= 0:
         # Check if ray-and-segment intersect at the exact endpoint of a segment.
         if abs(np.linalg.norm(q + t1*s - np.array(start_pt))) < 1e-6 or \
             abs(np.linalg.norm(q + t1*s - np.array(end_pt))) < 1e-6:
+            print("False. Intesection happened exactly on the tip of a line segment edge.")
             raise IntersectError("Intesection happened exactly on the tip of a line segment edge.")
+        print("True")
         return True
+    print("False")
     return False
 
 

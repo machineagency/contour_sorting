@@ -364,29 +364,40 @@ def create_parts_from_contours(contours):
         # Build the tree.
         for a_index, contour_a in enumerate(contour_subset_lists):
             contour_a_node = nested_contour_tree_items.get(contour_a.name(), Node(contour_a.name()))
-            nested_contour_tree_items[contour_a.name()] = contour_a_node
             for b_index, contour_b in enumerate(contour_subset_lists[a_index+1:]):
                 point_a = (contour_a.start_x, contour_a.start_y)
                 point_b = (contour_b.start_x, contour_b.start_y)
                 # Check if a is in b. If so, insert pair relationship into tree.
                 print(f"Testing {contour_a.name()} in Contour {contour_b.name()}")
                 if point_in_contour(point_a, contour_b):
-                    # Assign parenthood of contour_a to contour_b. Add back to the dict
+                    # contour_b is contour_a's parent. Add back to the dict
                     contour_b_node = nested_contour_tree_items.get(contour_b.name(), Node(contour_b.name()))
-                    contour_a_node.parent = contour_a_node
+                    contour_a_node.parent = contour_b_node
                     nested_contour_tree_items[contour_b.name()] = contour_b_node
-                    continue
+                    print("TRUE")
                 # Check if b is in a. If so, insert pair relationship into tree.
-                print(f"Testing {contour_b.name()} in Contour {contour_a.name()}")
-                if point_in_contour(point_b, contour_a):
-                    # Assign parenthood of contour_b to contour_a. Add back to the dict
+                elif point_in_contour(point_b, contour_a):
+                    print("FALSE")
+                    print(f"Testing {contour_b.name()} in Contour {contour_a.name()}")
+                    # contour_a is contour_b's parent. Add back to the dict
                     contour_b_node = nested_contour_tree_items.get(contour_b.name(), Node(contour_b.name()))
                     contour_b_node.parent = contour_a_node
                     nested_contour_tree_items[contour_b.name()] = contour_b_node
+                    print("TRUE")
+                else:
+                    print("FALSE")
+            nested_contour_tree_items[contour_a.name()] = contour_a_node
 
     # Find the root(s) and print out the tree from there.
     print(f"Nested Contour Tree has {len(nested_contour_tree_items)} items.")
-    print(nested_contour_tree_items[(0.0, 100.0)])
+    node=None
+    #while len(nested_contour_tree_items):
+    node_key = list(nested_contour_tree_items.keys())[0]
+    node = nested_contour_tree_items[node_key]
+    while node.parent is not None:
+        print(f"parent: {node.parent}")
+        node = node.parent
+    print(RenderTree(node))
 
     # Create the parts.
     # handle case with multiple polygons at the same level.
@@ -400,6 +411,7 @@ def main():
     # Open a document.
     #doc = ezdxf.readfile("30mm_square_with_holes_and_fillets.DXF")
     doc = ezdxf.readfile("contour_sorting_test_simple.DXF")
+    #doc = ezdxf.readfile("contour_sorting_test.DXF")
     msp = doc.modelspace()
 
     contours = create_contours(msp)
