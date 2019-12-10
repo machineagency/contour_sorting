@@ -410,8 +410,8 @@ def main():
     """ main fn. """
     # Open a document.
     #doc = ezdxf.readfile("30mm_square_with_holes_and_fillets.DXF")
-    doc = ezdxf.readfile("contour_sorting_test_simple.DXF")
-    #doc = ezdxf.readfile("contour_sorting_test.DXF")
+    #doc = ezdxf.readfile("contour_sorting_test_simple.DXF")
+    doc = ezdxf.readfile("contour_sorting_test.DXF")
     msp = doc.modelspace()
 
     contours = create_contours(msp)
