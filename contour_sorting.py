@@ -10,7 +10,8 @@ import ezdxf
 import math
 from interval_tree import IntervalTree
 from basic_geometry import *
-from anytree import Node, RenderTree
+from anytree import Node, RenderTree, LevelOrderGroupIter
+from collections import OrderedDict
 
 
 # TODO: should contour subclass SubContour?
@@ -317,94 +318,106 @@ def create_contours(entity_iterable):
         if elongated_sub_contour is None:
             sub_contours.append(new_sub_contour)
 
-    for contour in contours:
-        print("Contour:")
-        for entity in contour:
-            print(f"  {entity}")
+    #for contour in contours:
+    #    print("Contour:")
+    #    for entity in contour:
+    #        print(f"  {entity}")
 
     return contours
 
-def create_parts_from_contours(contours):
-    """Sort contours into parts."""
+def sort_contours_by_level(contours):
+    """Sort contours into parts.
+        Returns a sorted list of lists, where inner lists represent contours at the same depth,
+        and the outer list organizes inner lists by decreasing depth.
+    """
     # TODO: handle pre-closed contours. (Circles, ellipses, etc.)
     parts = []
     height_interval_to_contours = {} # items are contour lists, since multiple contours can have the same height interval.
     contour_tree = IntervalTree()
     heights = set()
+    contours_by_name = {}
     nested_contour_tree_items = {} # dict of contour nodes
 
-    # Find min/max heights of all contours. Create list (flattened dict) of height pts.
+    # Find min/max heights of all contours.
     layout_y_min = math.inf
     layout_y_max = -math.inf
     for contour in contours:
+        # Store contours by name.
+        contours_by_name[contour.name()] = contour
+        # Store contour in a dict by height interval. Some contours can have the same height, so use lists.
+        # This data structure is the input to build the interval tree.
         if (contour.y_min, contour.y_max) in height_interval_to_contours:
             height_interval_to_contours[(contour.y_min, contour.y_max)].append(contour)
         else:
             height_interval_to_contours[(contour.y_min, contour.y_max)] = [contour]
+        # Update the extremes of the layout.
         if contour.y_min < layout_y_min:
             layout_y_min = contour.y_min
         if contour.y_max > layout_y_max:
             layout_y_max = contour.y_max
-        # Add the contour's midpoint height interval.
+        # Add the contour's midpoint to the height intervals.
         heights.add((contour.y_max - contour.y_min)/2 + contour.y_min)
 
-    import pprint
-    pprint.pprint(height_interval_to_contours)
-
     # Create interval tree.
+    print("Packing Contours into Interval Tree for sorting speedup.")
     contour_tree.build(layout_y_min, layout_y_max, height_interval_to_contours)
 
-    # Construct all polygon in-out relationships.
+    # Construct all contour in-out relationships.
+    print("Constructing in-out contour relationships.")
     for height in heights:
         # Extract all the contours that exist at this height.
         contour_subset_lists = contour_tree.query(height)
         contour_subset_lists = [item[1] for item in contour_subset_lists] # remove the keys.
         contour_subset_lists = [item for sublist in contour_subset_lists for item in sublist] # flatten remaining lists.
 
-        # Build the tree.
+        # Build the In-Out relationship tree.
         for a_index, contour_a in enumerate(contour_subset_lists):
             contour_a_node = nested_contour_tree_items.get(contour_a.name(), Node(contour_a.name()))
             for b_index, contour_b in enumerate(contour_subset_lists[a_index+1:]):
                 point_a = (contour_a.start_x, contour_a.start_y)
                 point_b = (contour_b.start_x, contour_b.start_y)
                 # Check if a is in b. If so, insert pair relationship into tree.
-                print(f"Testing {contour_a.name()} in Contour {contour_b.name()}")
                 if point_in_contour(point_a, contour_b):
                     # contour_b is contour_a's parent. Add back to the dict
                     contour_b_node = nested_contour_tree_items.get(contour_b.name(), Node(contour_b.name()))
                     contour_a_node.parent = contour_b_node
                     nested_contour_tree_items[contour_b.name()] = contour_b_node
-                    print("TRUE")
                 # Check if b is in a. If so, insert pair relationship into tree.
                 elif point_in_contour(point_b, contour_a):
-                    print("FALSE")
-                    print(f"Testing {contour_b.name()} in Contour {contour_a.name()}")
                     # contour_a is contour_b's parent. Add back to the dict
                     contour_b_node = nested_contour_tree_items.get(contour_b.name(), Node(contour_b.name()))
                     contour_b_node.parent = contour_a_node
                     nested_contour_tree_items[contour_b.name()] = contour_b_node
-                    print("TRUE")
-                else:
-                    print("FALSE")
             nested_contour_tree_items[contour_a.name()] = contour_a_node
 
-    # Find the root(s) and print out the tree from there.
-    print(f"Nested Contour Tree has {len(nested_contour_tree_items)} items.")
-    node=None
-    #while len(nested_contour_tree_items):
-    node_key = list(nested_contour_tree_items.keys())[0]
-    node = nested_contour_tree_items[node_key]
-    while node.parent is not None:
-        print(f"parent: {node.parent}")
-        node = node.parent
-    print(RenderTree(node))
 
-    # Create the parts.
-    # handle case with multiple polygons at the same level.
+    print("Organizing contours by depth")
+    # A dict, keyed by level (int) of contours that live at that level.
+    depth_lists = OrderedDict()
+
+    # Contours may be sorted in multiple separate trees.
+    # Pull contours out of the dict representation and put into lists sorted by depths
+    while len(nested_contour_tree_items):
+        # Find the root(s) and print out the tree from there.
+        node=None
+        # Pull an arbitrary item out from the nesting.
+        node_key = list(nested_contour_tree_items.keys())[0]
+        # Get the root of this tree.
+        node = nested_contour_tree_items[node_key]
+        while node.parent is not None:
+            node = node.parent
+        # https://anytree.readthedocs.io/en/latest/api/anytree.iterators.html#anytree.iterators.levelordergroupiter.LevelOrderGroupIter
+        list_o_lists = [[node.name for node in children] for children in LevelOrderGroupIter(node)]
+        for index, depth_list in enumerate(list_o_lists):
+            old_depth_list = depth_lists.get(index, [])
+            for contour_name in depth_list:
+                old_depth_list.append(contours_by_name[contour_name])
+                del nested_contour_tree_items[contour_name]
+            depth_lists[index] = old_depth_list
 
     # Serialize tree.
+    return [v for k,v in depth_lists.items()]
 
-    return parts
 
 def main():
     """ main fn. """
@@ -415,7 +428,9 @@ def main():
     msp = doc.modelspace()
 
     contours = create_contours(msp)
-    parts = create_parts_from_contours(contours)
+    contours_by_level = sort_contours_by_level(contours)
+    import pprint
+    pprint.pprint(contours_by_level)
     #parts = sort_parts(parts) # Sort to minimize travel moves.
     # Recreate the DXF, and we're done!
 
