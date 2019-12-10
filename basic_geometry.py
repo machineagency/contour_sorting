@@ -17,8 +17,7 @@ def point_in_contour(pt, contour):
     ray_circle_radius = max([contour.x_max - contour.x_min, contour.y_max - contour.y_min])
 
     while True:
-        #theta = random.random()*2*math.pi # random angle in range [0, 2pi)
-        theta = math.pi/3
+        theta = random.random()*2*math.pi # random angle in range [0, 2pi)
         # Skip angles where the denominator blows up.
         if math.sin(theta) == 0 or math.cos(theta) == 0:
             continue
@@ -40,6 +39,7 @@ def point_in_contour(pt, contour):
         # Ray cast from the tangent line formed at the circle's perimeter at the angle theta.
         # Ray should start from here and intersect the point in question.
         intersection_count = 0
+        intersect_error = False
         for entity in contour:
             if entity.dxftype() == "LINE":
                 # TODO: put a try/except here to catch edge cases and change angle.
@@ -58,11 +58,13 @@ def point_in_contour(pt, contour):
                 except IntersectError:
                     # We can't trust this result because of the crescent moon edge case.
                     # Ignore this point.
-                    print("IntersectError")
-                    continue
+                    intersect_error = True
+                    break
             elif entity.dxftype() == "ARC":
                 print("Arc intersection calculation not yet supported.")
 
+        if intersect_error:
+            continue
         print(f"Total intersections: {intersection_count}")
         if intersection_count > 0 and intersection_count%2 == 0:
             return True
