@@ -42,15 +42,6 @@ class SubContour(Contour):
         self.x_min = math.inf
         self.x_max = -math.inf
 
-    def point_on_contour_edge(self):
-        """Return a point that sits on the edge of the contour"""
-        # Check for circles:
-        if len(self.segments) == 1 and self.is_closed():
-            # TODO: handle other single-segment contours that are closed, like ellipses.
-            return (self.x_max, self.y_max)
-        # Handle arcs, line segments:
-        return (self.start_x, self.start_y)
-
     def merge_back(self, other_sub_contour, reverse_order=False):
         if not reverse_order:
             for entity in other_sub_contour:
@@ -73,23 +64,40 @@ class SubContour(Contour):
 
     @property
     def start_x(self):
+        # Handle circle case: start and end are the same.
+        if len(self.segments) == 1 and self.segments[0].dxftype() == "CIRCLE": # can't use is_closed.
+            return self.segments[0].dxf.center[0] + self.segments[0].dxf.radius
+
         if self.segments[0].dxftype() == "LINE":
             return self.segments[0].dxf.start[0]
         elif self.segments[0].dxftype() == "ARC":
             return self.segments[0].dxf.radius * math.cos(self.segments[0].dxf.start_angle*math.pi/180.0) + \
                 self.segments[0].dxf.center[0]
+        print(f"{self.segments[0].dxftype()}")
+        print(f"len: {len(self.segments)}")
         raise RuntimeError("Contour has no defined start or finish.")
+
     @property
     def start_y(self):
+        # Handle circle case: start and end are the same.
+        if len(self.segments) == 1 and self.segments[0].dxftype() == "CIRCLE":
+            return self.segments[0].dxf.center[1] + self.segments[0].dxf.radius
+
         if self.segments[0].dxftype() == "LINE":
             return self.segments[0].dxf.start[1]
         elif self.segments[0].dxftype() == "ARC":
             return self.segments[0].dxf.radius * math.sin(self.segments[0].dxf.start_angle*math.pi/180.0) + \
                 self.segments[0].dxf.center[1]
+        print(f"{self.segments[0].dxftype()}")
+        print(f"len: {len(self.segments)}")
         raise RuntimeError("Contour has no defined start or finish.")
 
     @property
     def end_x(self):
+        # Handle circle case: start and end are the same.
+        if len(self.segments) == 1 and self.segments[0].dxftype() == "CIRCLE":
+            return self.segments[0].dxf.center[0] + self.segments[0].dxf.radius
+
         if self.segments[-1].dxftype() == "LINE":
             return self.segments[-1].dxf.end[0]
         elif self.segments[-1].dxftype() == "ARC":
@@ -98,6 +106,10 @@ class SubContour(Contour):
 
     @property
     def end_y(self):
+        # Handle circle case: start and end are the same.
+        if len(self.segments) == 1 and self.segments[0].dxftype() == "CIRCLE":
+            return self.segments[0].dxf.center[1] + self.segments[0].dxf.radius
+
         if self.segments[-1].dxftype() == "LINE":
             return self.segments[-1].dxf.end[1]
         elif self.segments[-1].dxftype() == "ARC":
@@ -129,7 +141,7 @@ class SubContour(Contour):
             self.x_max = entity.dxf.center[0] + entity.dxf.radius
             self.y_min = entity.dxf.center[1] - entity.dxf.radius
             self.y_max = entity.dxf.center[1] + entity.dxf.radius
-        if entity.dxftype() == "LINE":
+        elif entity.dxftype() == "LINE":
             if self.start_x < self.x_min:
                 self.x_min = self.start_x
             if self.start_x > self.x_max:
@@ -381,8 +393,8 @@ def sort_contours_by_level(contours):
         for a_index, contour_a in enumerate(contour_subset_lists):
             contour_a_node = nested_contour_tree_items.get(contour_a.name(), Node(contour_a.name()))
             for b_index, contour_b in enumerate(contour_subset_lists[a_index+1:]):
-                point_a = contour_a.point_on_contour_edge()
-                point_b = contour_b.point_on_contour_edge()
+                point_a = (contour_a.start_x, contour_a.start_y)
+                point_b = (contour_b.start_x, contour_b.start_y)
                 # Check if a is in b. If so, insert pair relationship into tree.
                 if point_in_contour(point_a, contour_b):
                     # contour_b is contour_a's parent. Add back to the dict
