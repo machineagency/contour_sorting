@@ -2,9 +2,6 @@
 """An optimized contour sorting post-processing scheme for DXF files."""
 
 # Assume no self-intersecting contours.
-# TODO: handle parts-in-parts case.
-# TODO: handle overlapping polygon case.
-# TODO: handle edge cases of ray-casting intersection.
 
 import ezdxf
 import math
@@ -12,6 +9,7 @@ from interval_tree import IntervalTree
 from basic_geometry import *
 from anytree import Node, RenderTree, LevelOrderGroupIter
 from collections import OrderedDict
+import numpy as np
 
 
 # TODO: should contour subclass SubContour?
@@ -41,6 +39,11 @@ class SubContour(Contour):
         self.y_max = -math.inf
         self.x_min = math.inf
         self.x_max = -math.inf
+
+    def bounding_box_center(self):
+        if not self.is_closed():
+            raise NotImplementedError("Bounding box of an open contour not implemented.")
+        return ((self.x_max - self.x_min)/2 + self.x_min, (self.y_max - self.y_min)/2 + self.y_min)
 
     def merge_back(self, other_sub_contour, reverse_order=False):
         if not reverse_order:
@@ -360,6 +363,9 @@ def sort_contours_by_level(contours):
     # Find min/max heights of all contours.
     layout_y_min = math.inf
     layout_y_max = -math.inf
+    # Also find the left/right extremes to find global corners.
+    layout_x_min = math.inf
+    layout_x_max = -math.inf
     for contour in contours:
         # Store contours by name.
         contours_by_name[contour.name()] = contour
@@ -374,6 +380,10 @@ def sort_contours_by_level(contours):
             layout_y_min = contour.y_min
         if contour.y_max > layout_y_max:
             layout_y_max = contour.y_max
+        if contour.x_min < layout_x_min:
+            layout_x_min = contour.x_min
+        if contour.x_max > layout_x_max:
+            layout_x_max = contour.x_max
         # Add the contour's midpoint to the height intervals.
         heights.add((contour.y_max - contour.y_min)/2 + contour.y_min)
 
@@ -434,12 +444,41 @@ def sort_contours_by_level(contours):
                 del nested_contour_tree_items[contour_name]
             depth_lists[index] = old_depth_list
 
-    # Serialize tree.
-    return [v for k,v in depth_lists.items()]
+    # Return serialized tree and a starting point.
+    return [v for k,v in depth_lists.items()], (layout_x_max, layout_y_max)
+
+def create_circuits(nested_contour_list, starting_pt):
+    sorted_list_of_lists = []
+
+    def nearest_neighbor(starting_pt, neighbors):
+        """Return nearest neighor"""
+        nearest_neighbor = None
+        shortest_distance = math.inf
+        for neighbor in neighbors:
+            distance = np.linalg.norm(np.array(starting_pt) - np.array((neighbor.start_x, neighbor.start_y)))
+            if distance < shortest_distance:
+                nearest_neighbor = neighbor
+                shortest_distance = distance
+        return nearest_neighbor
+
+    for neighborhood in reversed(nested_contour_list): # innermost to outermost
+        tour = []
+        tour.append(nearest_neighbor(starting_pt, neighborhood))
+        neighborhood.remove(tour[0])
+        while len(neighborhood): # TODO: can we change the shape of the inner list??
+            neighbor = nearest_neighbor(starting_pt, neighborhood)
+            tour.append(neighbor)
+            neighborhood.remove(neighbor)
+        # Take the bounding box of the last place and use it as the next starting point.
+        starting_pt = tour[-1].bounding_box_center()
+        sorted_list_of_lists.append(tour)
+
+    return sorted_list_of_lists
 
 
 def main():
     """ main fn. """
+    # TODO: add arg parser.
     # Open a document.
     doc = ezdxf.readfile("30mm_square_with_holes_and_fillets.DXF")
     #doc = ezdxf.readfile("contour_sorting_test_simple.DXF")
@@ -447,11 +486,16 @@ def main():
     msp = doc.modelspace()
 
     contours = create_contours(msp)
-    contours_by_level = sort_contours_by_level(contours)
+    contours_by_level, starting_pt = sort_contours_by_level(contours)
     import pprint
     pprint.pprint(contours_by_level)
 
-    circuits = create_circuits(contours_by_level)
+    circuits = create_circuits(contours_by_level, starting_pt)
+    for circuit in circuits:
+        for visit in circuit:
+            for segment in visit:
+                print(segment)
+        print()
 
     # TODO: Handle circles and arcs
     # Recreate the DXF, and we're done!
