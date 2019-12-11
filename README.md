@@ -1,5 +1,6 @@
 # Contour Sorting
-a dxf post-processor that sorts nested contours inside-edge to outside-edge
+a dxf post-processor that sorts nested contours inside-edge to outside-edge and
+takes a nearest-neighbor approach to minimizing travel distances between contours.
 
 
 ## Installation:
