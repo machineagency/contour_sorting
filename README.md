@@ -18,3 +18,8 @@ You will need Python 3.6 or later. From there, it's just:
 
 ### Limited Geometry
 Currently, this script only works with **segments**, **arcs**, and **circles**.
+
+### Contour Topology
+All contours must be closed. Furthermore, all contours must not intersect or self-intersect.
+Typically, if you're exporting surfaces from a 3D CAD program, this shouldn't be
+an issue, but if you're creating your cut file in a 2D environment, be forwarned!
