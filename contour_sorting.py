@@ -3,6 +3,8 @@
 
 # Assume no self-intersecting contours.
 
+import argparse
+import inspect
 import ezdxf
 import math
 from interval_tree import IntervalTree
@@ -340,10 +342,10 @@ def create_contours(entity_iterable):
         if elongated_sub_contour is None:
             sub_contours.append(new_sub_contour)
 
-    for contour in contours:
-        print("Contour:")
-        for entity in contour:
-            print(f"  {entity}")
+    #for contour in contours:
+    #    print("Contour:")
+    #    for entity in contour:
+    #        print(f"  {entity}, {entity.dxfattribs()}")
     return contours
 
 
@@ -476,53 +478,52 @@ def create_circuits(nested_contour_list, starting_pt):
     return sorted_list_of_lists
 
 
-def main():
-    """ main fn. """
-    # TODO: add arg parser.
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("file_path", type=str, help="the path to a dxf file")
+    args = parser.parse_args()
+
     # Open a document.
+    doc_name = args.file_path.rsplit(".", 1)[0]
     #doc = ezdxf.readfile("30mm_square_with_holes_and_fillets.DXF")
-    doc = ezdxf.readfile("contour_sorting_test_simple.DXF")
+    #doc = ezdxf.readfile("contour_sorting_test_simple.DXF")
     #doc = ezdxf.readfile("contour_sorting_test.DXF")
+
+    doc = ezdxf.readfile(args.file_path)
     msp = doc.modelspace()
 
     contours = create_contours(msp)
     contours_by_level, starting_pt = sort_contours_by_level(contours)
-    import pprint
-    pprint.pprint(contours_by_level)
+    #import pprint
+    #pprint.pprint(contours_by_level)
 
     circuits = create_circuits(contours_by_level, starting_pt)
+
+    #for circuit in circuits:
+    #    for visit in circuit:
+    #        for segment in visit:
+    #            print(segment)
+    #        print()
+    #    print()
+
+    # Recreate the DXF.
+    # Create a new document.
+    print("Recreating optimized DXF")
+    new_doc = ezdxf.new('R2010')  # create a new DXF R2010 drawing, official DXF version name: 'AC1024'
+    new_msp = new_doc.modelspace()  # add new entities to the modelspace
     for circuit in circuits:
-        for visit in circuit:
-            for segment in visit:
-                print(segment)
-        print()
-
-    # TODO: Handle circles and arcs
-    # Recreate the DXF, and we're done!
-
-    ## Create a new document.
-    #new_doc = ezdxf.new('R2010')  # create a new DXF R2010 drawing, official DXF version name: 'AC1024'
-    #new_msp = new_doc.modelspace()  # add new entities to the modelspace
-    #for entity in reversed_e:
-    #    #pprint.pprint(entity.dxf.dxftype)
-    #    if entity.dxf.dxftype == "ARC":
-    #        arc_arg_list = inspect.getfullargspec(msp.add_arc).args[1:] # drop [self]
-    #        dxfattribs = entity.dxfattribs()
-    #        arc_args = {k:v for k,v in dxfattribs.items() if k in arc_arg_list}
-    #        new_msp.add_arc(**arc_args)
-    #        #new_msp.add_arc(entity.dxf.center, entity.dxf.radius, entity.dxf.start_angle, entity.dxf.end_angle)
-    #    elif entity.dxf.dxftype == "LINE":
-    #        new_msp.add_line(entity.dxf.start, entity.dxf.end)
-    #    elif entity.dxf.dxftype == "CIRCLE":
-    #        new_msp.add_circle(entity.dxf.center, entity.dxf.radius)
-    #new_doc.saveas('reversed_30mm_square_with_holes_and_fillets.DXF')
+        for contour in circuit:
+            for entity in contour:
+                if entity.dxf.dxftype == "ARC":
+                    arc_arg_list = inspect.getfullargspec(msp.add_arc).args[1:] # drop [self]
+                    dxfattribs = entity.dxfattribs()
+                    arc_args = {k:v for k,v in dxfattribs.items() if k in arc_arg_list}
+                    new_msp.add_arc(**arc_args)
+                    #new_msp.add_arc(entity.dxf.center, entity.dxf.radius, entity.dxf.start_angle, entity.dxf.end_angle)
+                elif entity.dxf.dxftype == "LINE":
+                    new_msp.add_line(entity.dxf.start, entity.dxf.end)
+                elif entity.dxf.dxftype == "CIRCLE":
+                    new_msp.add_circle(entity.dxf.center, entity.dxf.radius)
+    new_doc.saveas(f'{doc_name}_optimized.dxf')
 
 
-def print_entity(e):
-    print("LINE on layer: %s\n" % e.dxf.layer)
-    print("start point: %s\n" % e.dxf.start)
-    print("end point: %s\n" % e.dxf.end)
-
-
-if __name__ == "__main__":
-    main()
